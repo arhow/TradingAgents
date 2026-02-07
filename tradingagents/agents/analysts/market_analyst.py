@@ -7,12 +7,13 @@ def create_market_analyst(llm, toolkit):
 
     def market_analyst_node(state):
         current_date = state["trade_date"]
-        ticker = state["company_of_interest"]
+        # ticker = state["symbol"]
         company_name = state["company_of_interest"]
+        symbol = state["symbol"]
 
         if toolkit.config["online_tools"]:
             tools = [
-                toolkit.get_YFin_data_online,
+                toolkit.get_tushare_data_online,
                 toolkit.get_stockstats_indicators_report_online,
             ]
         else:
@@ -61,7 +62,7 @@ Volume-Based Indicators:
                     " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
                     " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
                     " You have access to the following tools: {tool_names}.\n{system_message}"
-                    "For your reference, the current date is {current_date}. The company we want to look at is {ticker}",
+                    "For your reference, the current date is {current_date}. The company we want to look at is {symbol} {company_name}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
@@ -70,7 +71,8 @@ Volume-Based Indicators:
         prompt = prompt.partial(system_message=system_message)
         prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
         prompt = prompt.partial(current_date=current_date)
-        prompt = prompt.partial(ticker=ticker)
+        prompt = prompt.partial(company_name=company_name)
+        prompt = prompt.partial(symbol=symbol)
 
         chain = prompt | llm.bind_tools(tools)
 

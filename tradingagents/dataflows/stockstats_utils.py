@@ -1,9 +1,9 @@
 import pandas as pd
-import yfinance as yf
 from stockstats import wrap
 from typing import Annotated
 import os
 from .config import get_config
+from .tushare_utils import get_tushare_utils
 
 
 class StockstatsUtils:
@@ -55,30 +55,30 @@ class StockstatsUtils:
 
             data_file = os.path.join(
                 config["data_cache_dir"],
-                f"{symbol}-YFin-data-{start_date}-{end_date}.csv",
+                f"{symbol}-data-{start_date}-{end_date}.csv",
             )
 
             if os.path.exists(data_file):
                 data = pd.read_csv(data_file)
-                data["Date"] = pd.to_datetime(data["Date"])
             else:
-                data = yf.download(
-                    symbol,
-                    start=start_date,
-                    end=end_date,
-                    multi_level_index=False,
-                    progress=False,
-                    auto_adjust=True,
-                )
-                data = data.reset_index()
+                tushare_utils = get_tushare_utils()
+                data = tushare_utils.get_stock_data(symbol, start_date, end_date)
                 data.to_csv(data_file, index=False)
 
+            # Ensure date column is datetime and set as index for stockstats
+            if 'Date' in data.columns:
+                data['Date'] = pd.to_datetime(data['Date'])
+                data = data.set_index('Date')
+            elif 'date' in data.columns:
+                data['date'] = pd.to_datetime(data['date'])
+                data = data.set_index('date')
+
             df = wrap(data)
-            df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
-            curr_date = curr_date.strftime("%Y-%m-%d")
 
         df[indicator]  # trigger stockstats to calculate the indicator
-        matching_rows = df[df["Date"].str.startswith(curr_date)]
+        # Compare dates properly - after setting index, access by index
+        curr_date_dt = pd.to_datetime(curr_date)
+        matching_rows = df[df.index.date == curr_date_dt.date()]
 
         if not matching_rows.empty:
             indicator_value = matching_rows[indicator].values[0]

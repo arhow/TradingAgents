@@ -4,6 +4,7 @@ from .yfin_utils import *
 from .stockstats_utils import *
 from .googlenews_utils import *
 from .finnhub_utils import get_data_in_range
+from .tushare_utils import get_tushare_utils
 from dateutil.relativedelta import relativedelta
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -14,6 +15,7 @@ from tqdm import tqdm
 import yfinance as yf
 from openai import OpenAI
 from .config import get_config, set_config, DATA_DIR
+import traceback
 
 
 def get_finnhub_news(
@@ -667,6 +669,231 @@ def get_YFin_data_online(
     return header + csv_string
 
 
+def get_tushare_data_online(symbol: Annotated[str, "ticker symbol of the company"],
+                            start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
+                            end_date: Annotated[str, "End date in yyyy-mm-dd format"],
+                            ):
+    """
+    Retrieve Chinese stock price data for a given ticker symbol from Tushare.
+
+    Args:
+        symbol: Ticker symbol for Chinese stocks (e.g., '000001.SZ' for Shenzhen, '600000.SH' for Shanghai)
+        start_date: Start date in yyyy-mm-dd format
+        end_date: End date in yyyy-mm-dd format
+
+    Returns:
+        str: A formatted CSV string containing the stock price data
+    """
+
+    # Validate date formats
+    datetime.strptime(start_date, "%Y-%m-%d")
+    datetime.strptime(end_date, "%Y-%m-%d")
+
+    try:
+        # Get or create TushareUtils instance
+        tushare_utils = get_tushare_utils()
+
+        # Fetch stock data
+        data = tushare_utils.get_stock_data(symbol, start_date, end_date)
+
+        # Check if data is empty
+        if data.empty:
+            return f"No data found for symbol '{symbol}' between {start_date} and {end_date}"
+
+        # Round numerical values to 2 decimal places for cleaner display
+        numeric_columns = ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
+
+        for col in numeric_columns:
+            if col in data.columns:
+                data[col] = data[col].round(2)
+
+        # Convert DataFrame to CSV string
+        csv_string = data.to_csv()
+
+        # Add header information
+        header = f"# Chinese stock data for {symbol} from {start_date} to {end_date}\n"
+        header += f"# Total records: {len(data)}\n"
+        header += f"# Data retrieved from Tushare on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+        return header + csv_string
+
+    except Exception as e:
+        return f"Error fetching Tushare data for {symbol}: {str(e)}. Please ensure TUSHARE_TOKEN is set."
+
+
+def get_tushare_stock_info(
+    symbol: Annotated[str, "Stock symbol (e.g., 000001.SZ, 600000.SH)"],
+    info_type: Annotated[
+        str,
+        "Type of information: 'company', 'news', 'concept', 'financial', 'announcement'",
+    ],
+    date: Annotated[str, "Date for news/announcements in YYYY-MM-DD format"],
+    max_limit: Annotated[int, "Maximum number of items to return"] = 10,
+) -> str:
+    """
+    Retrieve various types of stock information from Tushare Pro API.
+
+    This function provides access to company information, news, concepts,
+    financial data, and announcements for Chinese A-share stocks.
+
+    Args:
+        symbol: Stock symbol (e.g., '000001.SZ' for Shenzhen, '600000.SH' for Shanghai)
+        info_type: Type of information to fetch
+        date: Date for time-sensitive queries (YYYY-MM-DD format)
+        max_limit: Maximum number of results to return
+
+    Returns:
+        str: Formatted information as a human-readable string
+    """
+    try:
+        # Get or create TushareUtils instance
+        tushare_utils = get_tushare_utils()
+
+        # Fetch the requested information
+        info_list = tushare_utils.get_stock_info(
+            symbol=symbol,
+            info_type=info_type,
+            date=date,
+            max_limit=max_limit
+        )
+
+        # Format the results for display
+        formatted_result = tushare_utils.format_stock_info(info_list)
+
+        # Add header
+        header = f"# Tushare Stock Information\n"
+        header += f"# Symbol: {symbol}\n"
+        header += f"# Info Type: {info_type}\n"
+        header += f"# Date: {date}\n"
+        header += f"# Retrieved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        header += "=" * 60 + "\n\n"
+
+        return header + formatted_result
+
+    except Exception as e:
+        return f"Error fetching {info_type} for '{symbol}': {str(e)}"
+
+
+def get_tushare_stock_news(
+    symbol: Annotated[str, "Stock symbol (e.g., 000001.SZ, 600000.SH)"],
+    date: Annotated[str, "Date for news in YYYY-MM-DD format"],
+    interval: Annotated[int, "Number of days to look back"] = 7,
+    max_limit: Annotated[int, "Maximum number of news items to return"] = None,
+) -> str:
+    """
+    Get filtered news for a specific Chinese stock from Tushare.
+
+    Args:
+        symbol: Stock symbol (e.g., '000001.SZ')
+        date: Date for news queries
+        interval: Number of days to look back
+        max_limit: Maximum number of results
+
+    Returns:
+        Formatted string with stock-specific news
+    """
+    try:
+        tushare_utils = get_tushare_utils()
+
+        # Get filtered stock information including news
+        stock_info = tushare_utils.get_stock_info(
+            symbol=symbol,
+            date=date,
+            interval=interval,
+            max_limit=max_limit
+        )
+
+        if not stock_info:
+            return f"No news found for {symbol} in the last {interval} days"
+
+        # Format output
+        output = f"## {symbol} News from Tushare\n"
+        output += f"## Date: {date} (looking back {interval} days)\n"
+        output += "=" * 60 + "\n\n"
+
+        for item in stock_info:
+            if item['type'] == 'company_info':
+                output += f"### Company: {item['name']} ({item['symbol']})\n"
+                output += f"Industry: {item['industry']}, Area: {item['area']}\n\n"
+            elif item['type'] in ['news', 'cctv_news', 'announcement', 'ir_qa']:
+                output += f"### [{item['type'].upper()}] {item['title']}\n"
+                output += f"Date: {item['datetime']}, Source: {item['source']}\n"
+                output += f"{item['content']}\n\n"
+
+        return output
+
+    except Exception as e:
+        return f"Error fetching news for '{symbol}': {str(e)}"
+
+
+def get_tushare_news(
+    date: Annotated[str, "Date for news in YYYY-MM-DD format"],
+    interval: Annotated[int, "Number of days to look back"] = 7,
+) -> str:
+    """
+    Get all news from Tushare without filtering by specific stock.
+    Includes news from multiple sources, CCTV news, announcements, and IR Q&A.
+
+    Args:
+        date: Date for news queries
+        interval: Number of days to look back
+
+    Returns:
+        Formatted string with all available news
+    """
+    try:
+        tushare_utils = get_tushare_utils()
+
+        # Get all news
+        news_df = tushare_utils.get_news(
+            date=date,
+            interval=interval
+        )
+
+        if news_df.empty:
+            return f"No news found for the last {interval} days"
+
+        # Format output
+        output = f"## Tushare News (All Sources)\n"
+        output += f"## Date: {date} (looking back {interval} days)\n"
+        output += f"## Total items: {len(news_df)}\n"
+        output += "=" * 60 + "\n\n"
+
+        # Group by type
+        news_types = news_df['type'].unique()
+
+        for news_type in news_types:
+            type_news = news_df[news_df['type'] == news_type]
+            output += f"### {news_type.upper()} ({len(type_news)} items)\n"
+            output += "-" * 40 + "\n"
+
+            # Show first few items from each type
+            for _, row in type_news.head(5).iterrows():
+                output += f"\n**{row['title']}**\n"
+                output += f"Date: {row['datetime']}"
+                if row.get('source'):
+                    output += f", Source: {row['source']}"
+                if row.get('ts_code'):
+                    output += f", Stock: {row['ts_code']}"
+                output += "\n"
+
+                # Show content preview
+                content = row['content']
+                if content and len(content) > 200:
+                    output += f"{content[:200]}...\n"
+                elif content:
+                    output += f"{content}\n"
+                output += "\n"
+
+            if len(type_news) > 5:
+                output += f"... and {len(type_news) - 5} more {news_type} items\n\n"
+
+        return output
+
+    except Exception as e:
+        return f"Error fetching news: {str(e)}"
+
+
 def get_YFin_data(
     symbol: Annotated[str, "ticker symbol of the company"],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
@@ -702,39 +929,211 @@ def get_YFin_data(
     return filtered_data
 
 
-def get_stock_news_openai(ticker, curr_date):
+def get_stock_news_openai(symbol, ticker, curr_date):
+    """
+    Search for stock news from Chinese social media and news platforms.
+    Searches each site individually for better coverage.
+
+    Args:
+        symbol: Stock code (e.g., '300418.SZ')
+        ticker: Company name (e.g., '昆仑万维')
+        curr_date: Current date in YYYY-MM-DD format
+
+    Returns:
+        str: JSON formatted search results or error message
+    """
     config = get_config()
     client = OpenAI(base_url=config["backend_url"])
 
-    response = client.responses.create(
-        model=config["quick_think_llm"],
-        input=[
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"Can you search Social Media for {ticker} from 7 days before {curr_date} to {curr_date}? Make sure you only get the data posted during that period.",
-                    }
-                ],
-            }
-        ],
-        text={"format": {"type": "text"}},
-        reasoning={},
-        tools=[
-            {
-                "type": "web_search_preview",
-                "user_location": {"type": "approximate"},
-                "search_context_size": "low",
-            }
-        ],
-        temperature=1,
-        max_output_tokens=4096,
-        top_p=1,
-        store=True,
-    )
+    # Define sites to search
+    SITES = [
+        ("东方财富股吧", ["guba.eastmoney.com"], "social"),
+        ("百度贴吧", ["tieba.baidu.com"], "social"),
+        ("知乎", ["zhihu.com"], "social"),
+        ("微博", ["m.weibo.cn", "weibo.com"], "social"),
+        ("雪球", ["xueqiu.com"], "social"),
+        ("新浪财经", ["finance.sina.com.cn", "sina.com.cn"], "news"),
+        ("华尔街见闻", ["wallstreetcn.com"], "news"),
+        ("同花顺", ["10jqka.com.cn"], "news"),
+        ("东方财富新闻", ["eastmoney.com"], "news"),
+        ("财联社", ["cls.cn"], "news"),
+    ]
 
-    return response.output[1].content[0].text
+    try:
+        # Calculate date range
+        from datetime import datetime, timedelta
+        end_date_dt = datetime.strptime(curr_date, '%Y-%m-%d')
+        start_date_dt = end_date_dt - timedelta(days=7)
+        start_date = start_date_dt.strftime('%Y-%m-%d')
+        end_date = end_date_dt.strftime('%Y-%m-%d')
+
+        # Generate date variants for better search coverage
+        date_variants = []
+        for i in range(7, -1, -1):
+            dt = end_date_dt - timedelta(days=i)
+            date_variants.extend([
+                dt.strftime('%Y-%m-%d'),
+                dt.strftime('%Y年%m月%d日'),
+                dt.strftime('%m-%d'),
+                f"{dt.month}月{dt.day}日"
+            ])
+
+        # Keyword variants
+        kw_variants = [ticker, symbol, "股票", "讨论", "帖子", "快讯", "公告"]
+
+        def build_site_prompt(site_name, domains, category):
+            """Build search prompt for a specific site"""
+            dom = " OR ".join([f"site:{d}" for d in domains])
+            kw = " / ".join(kw_variants)
+            dates = " / ".join(date_variants[:8])  # Show first 8 for brevity
+
+            return f"""
+TARGET WINDOW
+- Only keep items dated {start_date}–{end_date} inclusive, timezone = Asia/Shanghai.
+
+SCOPE (single site)
+- Platform: {site_name} ({category})
+- Domains: {dom}
+- Search with keywords: {kw}
+- Date strings to match: {dates}
+
+SEARCH RULES
+1) Run multiple queries using the above domains (`site:`) + keywords + date strings.
+2) If zero results, retry by:
+   a) swapping keywords,
+   b) using only code "{symbol}",
+   c) dropping explicit date tokens from the query (but still filter by date at extraction)
+3) Deduplicate by URL. Exclude pages without a clear timestamp within the window.
+
+OUTPUT (JSON format):
+{{
+  "platform": "{site_name}",
+  "category": "{category}",
+  "items": [
+    {{
+      "author": "author name or null",
+      "datetime_local": "YYYY-MM-DD HH:MM",
+      "title_or_snippet": "content snippet",
+      "url": "source URL"
+    }}
+  ],
+  "found_count": number
+}}
+"""
+
+        def search_one_site(site_info):
+            """Search a single site and return results"""
+            site_name, domains, category = site_info
+            try:
+                response = client.responses.create(
+                    model=config.get("quick_think_llm", "gpt-4o"),
+                    input=[
+                        {"role": "system", "content": """You are an AI assistant with access to websearch functions.
+The websearch function empowers you for real-time web search and information retrieval, particularly for current and
+relevant data from the internet. Always include the source URL for information fetched from the web."""},
+                        {"role": "user", "content": [
+                            {"type": "input_text", "text": build_site_prompt(site_name, domains, category)}
+                        ]}
+                    ],
+                    tools=[{
+                        "type": "web_search_preview",
+                        "search_context_size": "high",
+                        "user_location": {"type": "approximate"}
+                    }],
+                    max_output_tokens=10000,  # Enough for single site results
+                    top_p=1,
+                    store=True,
+                )
+
+                text = response.output_text if response.output_text else None
+                if text:
+                    # Try to parse as JSON
+                    try:
+                        result = json.loads(text)
+                        return result
+                    except json.JSONDecodeError:
+                        # Return raw text if not JSON
+                        return {
+                            "platform": site_name,
+                            "category": category,
+                            "items": [],
+                            "found_count": 0,
+                            "error": "Failed to parse response"
+                        }
+                return None
+
+            except Exception as e:
+                print(f"Error searching {site_name}: {e}")
+                return None
+
+        # Search all sites
+        all_items = []
+        search_summary = []
+
+        print(f"\nSearching for {ticker} ({symbol}) from {start_date} to {end_date}")
+        print("=" * 60)
+
+        for site in SITES:
+            print(f"Searching {site[0]}...")
+            result = search_one_site(site)
+
+            if result:
+                # Extract items
+                items = result.get("items", [])
+                for item in items:
+                    item["platform"] = result.get("platform", site[0])
+                    item["category"] = result.get("category", site[2])
+                all_items.extend(items)
+
+                # Track search summary
+                search_summary.append({
+                    "site": site[0],
+                    "found_count": result.get("found_count", len(items))
+                })
+                print(f"  Found {len(items)} items")
+            else:
+                print(f"  No response received")
+                search_summary.append({
+                    "site": site[0],
+                    "found_count": 0
+                })
+
+        # Deduplicate items by URL
+        seen_urls = set()
+        unique_items = []
+        for item in all_items:
+            url = item.get("url")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                unique_items.append(item)
+
+        # Sort by datetime
+        unique_items.sort(key=lambda x: x.get("datetime_local", ""))
+
+        # Prepare final result
+        final_result = {
+            "items": unique_items,
+            "summary": {
+                "total_items_found": len(all_items),
+                "unique_items": len(unique_items),
+                "sites_searched": len(SITES),
+                "date_range": f"{start_date} to {end_date}",
+                "search_details": search_summary
+            }
+        }
+
+        print("\n" + "=" * 60)
+        print(f"Total items found: {len(all_items)}")
+        print(f"Unique items: {len(unique_items)}")
+
+        # Convert to JSON string for output
+        output = json.dumps(final_result, ensure_ascii=False, indent=2)
+        return output
+
+    except Exception as e:
+        print(f"Error in get_stock_news_openai: {e}")
+        print(traceback.format_exc())
+        return None
 
 
 def get_global_news_openai(curr_date):

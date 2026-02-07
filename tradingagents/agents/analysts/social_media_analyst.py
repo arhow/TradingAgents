@@ -6,14 +6,15 @@ import json
 def create_social_media_analyst(llm, toolkit):
     def social_media_analyst_node(state):
         current_date = state["trade_date"]
-        ticker = state["company_of_interest"]
+        ticker = state["symbol"]
         company_name = state["company_of_interest"]
+        symbol = state["symbol"]
 
         if toolkit.config["online_tools"]:
-            tools = [toolkit.get_stock_news_openai]
+            tools = [toolkit.get_tushare_stock_news] #toolkit.get_stock_news_openai
         else:
             tools = [
-                toolkit.get_reddit_stock_info,
+                toolkit.get_tushare_stock_news,
             ]
 
         system_message = (
@@ -32,7 +33,7 @@ def create_social_media_analyst(llm, toolkit):
                     " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
                     " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
                     " You have access to the following tools: {tool_names}.\n{system_message}"
-                    "For your reference, the current date is {current_date}. The current company we want to analyze is {ticker}",
+                    "For your reference, the current date is {current_date}. The current company we want to analyze is {symbol} {company_name}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
@@ -41,7 +42,8 @@ def create_social_media_analyst(llm, toolkit):
         prompt = prompt.partial(system_message=system_message)
         prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
         prompt = prompt.partial(current_date=current_date)
-        prompt = prompt.partial(ticker=ticker)
+        prompt = prompt.partial(company_name=company_name)
+        prompt = prompt.partial(symbol=symbol)
 
         chain = prompt | llm.bind_tools(tools)
 

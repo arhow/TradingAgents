@@ -121,6 +121,53 @@ class Toolkit:
 
     @staticmethod
     @tool
+    def get_tushare_stock_news(
+        ticker: Annotated[
+            str,
+            "Stock symbol for Chinese A-shares. e.g. 000001.SZ, 600000.SH",
+        ],
+        curr_date: Annotated[str, "End date in yyyy-mm-dd format. Will fetch ALL news for PAST 7 DAYS ending on this date. DO NOT call multiple times!"],
+    ) -> str:
+        """
+        Retrieve news for a Chinese stock for the PAST 7 DAYS in a SINGLE call.
+
+        IMPORTANT: This function automatically fetches news for the past 7 days from curr_date.
+        DO NOT call multiple times for different dates - one call gets ALL news for the week.
+
+        Example: get_tushare_stock_news('300418.SZ', '2025-09-20')
+                 Returns ALL news from 2025-09-14 to 2025-09-20 (7 days of news)
+
+        Args:
+            ticker (str): Stock symbol for Chinese A-shares. e.g. 000001.SZ, 600000.SH
+            curr_date (str): End date - will fetch news from (curr_date - 7 days) to curr_date
+        Returns:
+            str: A formatted string containing ALL news for the past 7 days
+        """
+
+        stock_news_results = interface.get_tushare_stock_news(ticker, curr_date, 7, None)
+
+        return stock_news_results
+
+    @staticmethod
+    @tool
+    def get_tushare_news(
+        curr_date: Annotated[str, "Date you want to get news for in yyyy-mm-dd format"],
+    ) -> str:
+        """
+        Retrieve all news from Tushare (Chinese market) without filtering by specific stock.
+        Includes news from multiple sources, CCTV news, announcements, and IR Q&A.
+        Args:
+            curr_date (str): Date you want to get news for in yyyy-mm-dd format
+        Returns:
+            str: A formatted string containing all available news from Chinese market sources
+        """
+
+        all_news_results = interface.get_tushare_news(curr_date, 7)
+
+        return all_news_results
+
+    @staticmethod
+    @tool
     def get_YFin_data(
         symbol: Annotated[str, "ticker symbol of the company"],
         start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
@@ -158,6 +205,27 @@ class Toolkit:
         """
 
         result_data = interface.get_YFin_data_online(symbol, start_date, end_date)
+
+        return result_data
+
+    @staticmethod
+    @tool
+    def get_tushare_data_online(
+        symbol: Annotated[str, "Chinese stock ticker (e.g., 000001.SZ, 600000.SH)"],
+        start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
+        end_date: Annotated[str, "End date in yyyy-mm-dd format"],
+    ) -> str:
+        """
+        Retrieve Chinese stock price data for a given ticker symbol from Tushare.
+        Args:
+            symbol (str): Chinese stock ticker symbol, e.g. 000001.SZ (Shenzhen), 600000.SH (Shanghai)
+            start_date (str): Start date in yyyy-mm-dd format
+            end_date (str): End date in yyyy-mm-dd format
+        Returns:
+            str: A formatted dataframe containing the Chinese stock price data for the specified ticker symbol in the specified date range.
+        """
+
+        result_data = interface.get_tushare_data_online(symbol, start_date, end_date)
 
         return result_data
 
@@ -364,19 +432,21 @@ class Toolkit:
     @staticmethod
     @tool
     def get_stock_news_openai(
-        ticker: Annotated[str, "the company's ticker"],
+        symbol: Annotated[str, "Stock code (e.g., 300418.SZ, AAPL)"],
+        ticker: Annotated[str, "Company name (e.g., 昆仑万维, Apple Inc.)"],
         curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
     ):
         """
         Retrieve the latest news about a given stock by using OpenAI's news API.
         Args:
-            ticker (str): Ticker of a company. e.g. AAPL, TSM
+            symbol (str): Stock code/symbol. e.g. 300418.SZ, 000001.SZ, AAPL
+            ticker (str): Company name. e.g. 昆仑万维, 平安银行, Apple Inc.
             curr_date (str): Current date in yyyy-mm-dd format
         Returns:
             str: A formatted string containing the latest news about the company on the given date.
         """
 
-        openai_news_results = interface.get_stock_news_openai(ticker, curr_date)
+        openai_news_results = interface.get_stock_news_openai(symbol, ticker, curr_date)
 
         return openai_news_results
 

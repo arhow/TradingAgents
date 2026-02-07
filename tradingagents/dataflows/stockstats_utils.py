@@ -16,42 +16,19 @@ class StockstatsUtils:
         curr_date: Annotated[
             str, "curr date for retrieving stock price data, YYYY-mm-dd"
         ],
-        data_dir: Annotated[
-            str,
-            "directory where the stock data is stored.",
-        ],
-        online: Annotated[
-            bool,
-            "whether to use online tools to fetch data or offline tools. If True, will use online tools.",
-        ] = False,
     ):
-        df = None
-        data = None
+        config = get_config()
 
-        if not online:
-            try:
-                data = pd.read_csv(
-                    os.path.join(
-                        data_dir,
-                        f"{symbol}-YFin-data-2015-01-01-2025-03-25.csv",
-                    )
-                )
-                df = wrap(data)
-            except FileNotFoundError:
-                raise Exception("Stockstats fail: Yahoo Finance data not fetched yet!")
-        else:
-            # Get today's date as YYYY-mm-dd to add to cache
-            today_date = pd.Timestamp.today()
-            curr_date = pd.to_datetime(curr_date)
+        today_date = pd.Timestamp.today()
+        curr_date_dt = pd.to_datetime(curr_date)
 
-            end_date = today_date
-            start_date = today_date - pd.DateOffset(years=15)
-            start_date = start_date.strftime("%Y-%m-%d")
-            end_date = end_date.strftime("%Y-%m-%d")
+        end_date = today_date
+        start_date = today_date - pd.DateOffset(years=15)
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        end_date_str = end_date.strftime("%Y-%m-%d")
 
-            # Get config and ensure cache directory exists
-            config = get_config()
-            os.makedirs(config["data_cache_dir"], exist_ok=True)
+        # Ensure cache directory exists
+        os.makedirs(config["data_cache_dir"], exist_ok=True)
 
             data_file = os.path.join(
                 config["data_cache_dir"],

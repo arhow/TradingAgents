@@ -1138,69 +1138,42 @@ relevant data from the internet. Always include the source URL for information f
 
 def get_global_news_openai(curr_date):
     config = get_config()
-    client = OpenAI(base_url=config["backend_url"])
 
-    response = client.responses.create(
-        model=config["quick_think_llm"],
-        input=[
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"Can you search global or macroeconomics news from 7 days before {curr_date} to {curr_date} that would be informative for trading purposes? Make sure you only get the data posted during that period.",
-                    }
-                ],
-            }
-        ],
-        text={"format": {"type": "text"}},
-        reasoning={},
-        tools=[
-            {
-                "type": "web_search_preview",
-                "user_location": {"type": "approximate"},
-                "search_context_size": "low",
-            }
-        ],
-        temperature=1,
-        max_output_tokens=4096,
-        top_p=1,
-        store=True,
-    )
+    # Check tool-level configuration first (if method provided)
+    if method:
+        tool_vendors = config.get("tool_vendors", {})
+        if method in tool_vendors:
+            return tool_vendors[method]
 
-    return response.output[1].content[0].text
+    # Fall back to category-level configuration
+    return config.get("data_vendors", {}).get(category, "default")
 
+def route_to_vendor(method: str, *args, **kwargs):
+    """Route method calls to appropriate vendor implementation with fallback support."""
+    category = get_category_for_method(method)
+    vendor_config = get_vendor(category, method)
+    primary_vendors = [v.strip() for v in vendor_config.split(',')]
 
-def get_fundamentals_openai(ticker, curr_date):
-    config = get_config()
-    client = OpenAI(base_url=config["backend_url"])
+    if method not in VENDOR_METHODS:
+        raise ValueError(f"Method '{method}' not supported")
 
-    response = client.responses.create(
-        model=config["quick_think_llm"],
-        input=[
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"Can you search Fundamental for discussions on {ticker} during of the month before {curr_date} to the month of {curr_date}. Make sure you only get the data posted during that period. List as a table, with PE/PS/Cash flow/ etc",
-                    }
-                ],
-            }
-        ],
-        text={"format": {"type": "text"}},
-        reasoning={},
-        tools=[
-            {
-                "type": "web_search_preview",
-                "user_location": {"type": "approximate"},
-                "search_context_size": "low",
-            }
-        ],
-        temperature=1,
-        max_output_tokens=4096,
-        top_p=1,
-        store=True,
-    )
+    # Build fallback chain: primary vendors first, then remaining available vendors
+    all_available_vendors = list(VENDOR_METHODS[method].keys())
+    fallback_vendors = primary_vendors.copy()
+    for vendor in all_available_vendors:
+        if vendor not in fallback_vendors:
+            fallback_vendors.append(vendor)
 
-    return response.output[1].content[0].text
+    for vendor in fallback_vendors:
+        if vendor not in VENDOR_METHODS[method]:
+            continue
+
+        vendor_impl = VENDOR_METHODS[method][vendor]
+        impl_func = vendor_impl[0] if isinstance(vendor_impl, list) else vendor_impl
+
+        try:
+            return impl_func(*args, **kwargs)
+        except AlphaVantageRateLimitError:
+            continue  # Only rate limits trigger fallback
+
+    raise RuntimeError(f"No available vendor for '{method}'")

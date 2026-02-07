@@ -48,6 +48,7 @@ class RiskDebateState(TypedDict):
 
 
 class AgentState(MessagesState):
+    symbol: Annotated[str, "Company code in stock market, in china use a number as a company code"]
     company_of_interest: Annotated[str, "Company that we are interested in trading"]
     trade_date: Annotated[str, "What date we are trading at"]
 
